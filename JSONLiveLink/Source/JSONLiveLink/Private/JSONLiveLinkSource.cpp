@@ -153,179 +153,92 @@ uint32 FJSONLiveLinkSource::Run()
 void FJSONLiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode::ThreadSafe> ReceivedData)
 {
 	FString JsonString;
-	JsonString.Empty(ReceivedData->Num());
-	for (uint8& Byte : *ReceivedData.Get())
-	{
-		JsonString += TCHAR(Byte);
-	}
-	// UE_LOG(LogTemp, Warning, TEXT("This is the data: %s"), *JsonString);
+JsonString.Empty(ReceivedData->Num());
+for (uint8& Byte : *ReceivedData.Get())
+{
+	JsonString += TCHAR(Byte);
+}
+//UE_LOG(LogTemp, Warning, TEXT("This is the data: %s"), *JsonString);
 
+
+
+TSharedPtr<FJsonObject> JsonObject;
+TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonString);
+// UE_LOG(LogTemp, Warning, TEXT("Some warning message2"));
+
+
+if (FJsonSerializer::Deserialize(Reader, JsonObject))
+{
+	//Since this will only work with MeowFace, our LiveLink Subject is gonna be MeowFace. Will look into exposing this in the UI on the off chance someone wants to connect multiple MeowFaces to the same session.
+	FName SubjectName("MeowFace");
+
+	FLiveLinkStaticDataStruct StaticDataStruct = FLiveLinkStaticDataStruct(FLiveLinkSkeletonStaticData::StaticStruct());
+	FLiveLinkSkeletonStaticData& StaticData = *StaticDataStruct.Cast<FLiveLinkSkeletonStaticData>();
+
+	FLiveLinkFrameDataStruct FrameDataStruct = FLiveLinkFrameDataStruct(FLiveLinkAnimationFrameData::StaticStruct());
+	FLiveLinkAnimationFrameData& FrameData = *FrameDataStruct.Cast<FLiveLinkAnimationFrameData>();
 
 	
-	TSharedPtr<FJsonObject> JsonObject;
-	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonString);
-	// UE_LOG(LogTemp, Warning, TEXT("Some warning message2"));
 
-
-	if (FJsonSerializer::Deserialize(Reader, JsonObject))
+	const TArray<TSharedPtr<FJsonValue>>* BlendShapeArray;
+	if (JsonObject->TryGetArrayField(TEXT("BlendShapes"), BlendShapeArray))
 	{
-		for (TPair<FString, TSharedPtr<FJsonValue>>& JsonField : JsonObject->Values)
+		//Initialize StaticData and FrameData to the length of the BlendShapes array +3 because we need to add some more properties later and appending to the array causes problems
+		StaticData.PropertyNames.SetNumUninitialized(BlendShapeArray->Num()+3);
+		FrameData.PropertyValues.SetNumUninitialized(BlendShapeArray->Num()+3);
+
+		//For every item in the BlendShapes array convert them into JSON object and write their values into the StaticData and FrameData arrays.
+		for (int BlendIdx = 0; BlendIdx < BlendShapeArray->Num(); ++BlendIdx)
 		{
-			const TSharedPtr<FJsonObject> MyJsonObject = JsonField.Value->AsObject();
-
-			FName SubjectName(*JsonField.Key);
-			const TArray<TSharedPtr<FJsonValue>>* BoneArray ;
-			const TArray<TSharedPtr<FJsonValue>>* ParameterArray;
-
-			bool bCreateSubject = !EncounteredSubjects.Contains(SubjectName);
-
-			
-
-
-
-			FLiveLinkStaticDataStruct StaticDataStruct = FLiveLinkStaticDataStruct(FLiveLinkSkeletonStaticData::StaticStruct());
-			FLiveLinkSkeletonStaticData& StaticData = *StaticDataStruct.Cast<FLiveLinkSkeletonStaticData>();
-
-			FLiveLinkFrameDataStruct FrameDataStruct = FLiveLinkFrameDataStruct(FLiveLinkAnimationFrameData::StaticStruct());
-			FLiveLinkAnimationFrameData& FrameData = *FrameDataStruct.Cast<FLiveLinkAnimationFrameData>();
-
-			
-			if (MyJsonObject->TryGetArrayField(TEXT("Bone"), BoneArray))
+			const TSharedPtr<FJsonValue>& Shape = (*BlendShapeArray)[BlendIdx];
+			const TSharedPtr<FJsonObject> ShapeObject = Shape->AsObject();
+			FString KeyName;
+			if (ShapeObject->TryGetStringField(TEXT("k"), KeyName))
 			{
-				StaticData.BoneNames.SetNumUninitialized(BoneArray->Num());
-				StaticData.BoneParents.SetNumUninitialized(BoneArray->Num());
-				FrameData.Transforms.SetNumUninitialized(BoneArray->Num());
-			
-
-				for (int BoneIdx = 0; BoneIdx < BoneArray->Num(); ++BoneIdx)
-				{
-					const TSharedPtr<FJsonValue>& Bone = (*BoneArray)[BoneIdx];
-					const TSharedPtr<FJsonObject> BoneObject = Bone->AsObject();
-
-					FString BoneName;
-					if (BoneObject->TryGetStringField(TEXT("Name"), BoneName))
-					{
-						StaticData.BoneNames[BoneIdx] = FName(*BoneName);
-					}
-					else
-					{
-						// Invalid Json Format
-						return;
-					}
-
-					int32 BoneParentIdx;
-					if (BoneObject->TryGetNumberField("Parent", BoneParentIdx))
-					{
-						StaticData.BoneParents[BoneIdx] = BoneParentIdx;
-					}
-					else
-					{
-						// Invalid Json Format
-						return;
-					}
-				}
-
-				for (int BoneIdx = 0; BoneIdx < BoneArray->Num(); ++BoneIdx)
-				{
-					const TSharedPtr<FJsonValue>& Bone = (*BoneArray)[BoneIdx];
-					const TSharedPtr<FJsonObject> BoneObject = Bone->AsObject();
-
-					const TArray<TSharedPtr<FJsonValue>>* LocationArray;
-					FVector BoneLocation;
-					if (BoneObject->TryGetArrayField(TEXT("Location"), LocationArray) 
-						&& LocationArray->Num() == 3) // X, Y, Z
-					{
-						double X = (*LocationArray)[0]->AsNumber();
-						double Y = (*LocationArray)[1]->AsNumber();
-						double Z = (*LocationArray)[2]->AsNumber();
-						BoneLocation = FVector(X, Y, Z);
-					}
-					else
-					{
-						// Invalid Json Format
-						return;
-					}
-
-					const TArray<TSharedPtr<FJsonValue>>* RotationArray;
-					FQuat BoneQuat;
-					if (BoneObject->TryGetArrayField(TEXT("Rotation"), RotationArray)
-						&& RotationArray->Num() == 4) // X, Y, Z, W
-					{
-						double X = (*RotationArray)[0]->AsNumber();
-						double Y = (*RotationArray)[1]->AsNumber();
-						double Z = (*RotationArray)[2]->AsNumber();
-						double W = (*RotationArray)[3]->AsNumber();
-						BoneQuat = FQuat(X, Y, Z, W);
-					}
-					else
-					{
-						// Invalid Json Format
-						return;
-					}
-
-					const TArray<TSharedPtr<FJsonValue>>* ScaleArray;
-					FVector BoneScale;
-					if (BoneObject->TryGetArrayField(TEXT("Scale"), ScaleArray)
-						&& ScaleArray->Num() == 3) // X, Y, Z
-					{
-						double X = (*ScaleArray)[0]->AsNumber();
-						double Y = (*ScaleArray)[1]->AsNumber();
-						double Z = (*ScaleArray)[2]->AsNumber();
-						BoneScale = FVector(X, Y, Z);
-					}
-					else
-					{
-						// Invalid Json Format
-						return;
-					}
-
-					FrameData.Transforms[BoneIdx] = FTransform(BoneQuat, BoneLocation, BoneScale);
-				}
+				//UE_LOG(LogTemp, Log, TEXT("ShapeKey %s"), *KeyName);
+				StaticData.PropertyNames[BlendIdx] = FName(*KeyName);
 			}
-
-			if (MyJsonObject->TryGetArrayField(TEXT("Parameter"), ParameterArray))
+			float KeyValue;
+			if (ShapeObject->TryGetNumberField(TEXT("v"), KeyValue))
 			{
-
-				StaticData.PropertyNames.SetNumUninitialized(ParameterArray->Num());
-				FrameData.PropertyValues.SetNumUninitialized(ParameterArray->Num());
-
-				for (int i = 0; i < ParameterArray->Num(); ++i)
-				{
-					const TSharedPtr<FJsonValue>& param = (*ParameterArray)[i];
-					const TSharedPtr<FJsonObject> paramobject = param->AsObject();
-
-					FString parameterName;
-					if (paramobject->TryGetStringField(TEXT("Name"), parameterName))
-					{
-						StaticData.PropertyNames[i] = FName(*parameterName);
-					}
-					else
-					{
-						// invalid json format
-						return;
-					}
-				}
-
-				for (int i = 0; i < ParameterArray->Num(); i++) 
-				{
-					const TSharedPtr<FJsonValue>& param = (*ParameterArray)[i];
-					const TSharedPtr<FJsonObject> paramObject = param->AsObject();
-					double value;
-					if (paramObject->TryGetNumberField(TEXT("Value"), value)) 
-					{
-						FrameData.PropertyValues[i] = (float)value;
-					}
-					else
-					{
-						return;
-					}
-				}
+				//UE_LOG(LogTemp, Log, TEXT("Shape Value %f"), KeyValue);
+				FrameData.PropertyValues[BlendIdx] = KeyValue;
 			}
-
-			Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectName }, ULiveLinkAnimationRole::StaticClass(), MoveTemp(StaticDataStruct));
-			EncounteredSubjects.Add(SubjectName);
-			Client->PushSubjectFrameData_AnyThread({SourceGuid, SubjectName}, MoveTemp(FrameDataStruct));
 		}
+		//Combine Left and Right Head Rolls from MeowFace into a single headRoll property			
+		StaticData.PropertyNames[BlendShapeArray->Num()] = "headRoll";
+		float LeftRoll;
+		StaticData.FindPropertyValue(FrameData, "headRollLeft", LeftRoll);
+		float RightRoll;
+		StaticData.FindPropertyValue(FrameData, "headRollRight", RightRoll);
+		FrameData.PropertyValues[BlendShapeArray->Num()] = (LeftRoll + (RightRoll * -1));
+
+		//Combine Head Up and Head Down into a single headPitch property
+		StaticData.PropertyNames[BlendShapeArray->Num()+1] = "headPitch";
+		float HeadDown;
+		StaticData.FindPropertyValue(FrameData, "headDown", HeadDown);
+		float HeadUp;
+		StaticData.FindPropertyValue(FrameData, "headUp", HeadUp);
+		FrameData.PropertyValues[BlendShapeArray->Num()+1] = (HeadUp + (HeadDown * -1));
+
+		//Combine headLeft and headRight into a single headYaw property
+		StaticData.PropertyNames[BlendShapeArray->Num()+2] = "headYaw";
+		float HeadLeft;
+		StaticData.FindPropertyValue(FrameData, "headLeft", HeadLeft);
+		float HeadRight;
+		StaticData.FindPropertyValue(FrameData, "headRight", HeadRight);
+		FrameData.PropertyValues[BlendShapeArray->Num()+2] = (HeadLeft + (HeadRight * -1));
+	}		
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("No BlendShape Array Found"));
+	}
+
+	
+
+	Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectName }, ULiveLinkAnimationRole::StaticClass(), MoveTemp(StaticDataStruct));		
+	Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectName }, MoveTemp(FrameDataStruct));
+	EncounteredSubjects.Add(SubjectName);
 	}
 }
 
