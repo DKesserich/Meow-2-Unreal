@@ -1,0 +1,13 @@
+{
+	"RemapUnityFiles": 
+	{
+		"Module.Meow2Unreal.cpp.obj": [
+			"Meow2Unreal.init.gen.cpp.obj",
+			"Meow2UnrealSourceFactory.gen.cpp.obj",
+			"Meow2Unreal.cpp.obj",
+			"Meow2UnrealSource.cpp.obj",
+			"Meow2UnrealSourceFactory.cpp.obj",
+			"SMeow2UnrealSourceFactory.cpp.obj"
+		]
+	}
+}

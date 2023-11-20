@@ -1,0 +1,26 @@
+{
+	"FileVersion": 3,
+	"Version": 2,
+	"VersionName": "2.0",
+	"FriendlyName": "Meow2Unreal",
+	"Description": "LiveLink Source for receiving MeowFace data",
+	"Category": "Animation",
+	"CreatedBy": "David Lejeune",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"Installed": false,
+	"Modules": [
+    {
+      "Name": "Meow2Unreal",
+      "Type": "Runtime",
+      "LoadingPhase": "Default",
+	"PlatformAllowList": [
+				"Win64",
+		]
+    }
+  ]
+}
